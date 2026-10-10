@@ -2,7 +2,7 @@ const sb = window.supabase.createClient(
     SUPABASE_CONFIG.url,
     SUPABASE_CONFIG.publishableKey,
     {
-        auth: { persistSession: false, autoRefreshToken: false },
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
         realtime: { params: { eventsPerSecond: 10 } }
     }
 );

@@ -555,11 +555,7 @@ async function renderTemporaryChat(){
     setStatus("Chat temporário conectado")
 }
 
-function adminIsLoggedIn(){
-    return sessionStorage.getItem("aogiri.admin.session")==="1";
-}
-
-function openAdminLogin(){
+async function openAdminLogin(){
     const old=document.getElementById("adminOverlay");
     if(old)old.remove();
 
@@ -570,61 +566,129 @@ function openAdminLogin(){
       <div class="admin-dialog">
         <div class="admin-dialog-title">AOGIRI SYSTEM ADMINISTRATION</div>
         <div class="admin-dialog-body">
-          ${adminIsLoggedIn()?`
-            <div class="admin-panel">
-              <span class="admin-badge">ADMIN</span>
-              <p>Sessão administrativa local ativa.</p>
-              <p class="small">Este painel secreto é um recurso da interface. Para privilégios administrativos reais no Supabase, use autenticação segura no backend.</p>
-              <button id="adminOpenStats" class="retro-btn">Informações do sistema</button>
-              <button id="adminLogout" class="retro-btn">Sair</button>
-              <button id="adminClose" class="retro-btn">Fechar</button>
-            </div>
-          `:`
-            <label>Usuário</label>
-            <input id="adminUser" class="admin-field" autocomplete="off">
-            <label>Senha</label>
-            <input id="adminPass" class="admin-field" type="password">
-            <div id="adminError" class="small danger"></div>
-            <button id="adminLoginBtn" class="retro-btn">Entrar</button>
-            <button id="adminClose" class="retro-btn">Cancelar</button>
-          `}
+          <div id="adminContent"><div class="small">Verificando sessão...</div></div>
         </div>
       </div>`;
     document.body.appendChild(overlay);
+    overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.remove()});
 
-    document.getElementById("adminClose").onclick=()=>overlay.remove();
+    const content=document.getElementById("adminContent");
+    const user=await adminSession();
 
-    if(adminIsLoggedIn()){
-        document.getElementById("adminLogout").onclick=()=>{
-            sessionStorage.removeItem("aogiri.admin.session");
-            overlay.remove();
-        };
-        document.getElementById("adminOpenStats").onclick=()=>{
-            const el=overlay.querySelector(".admin-panel");
-            const extra=document.createElement("div");
-            extra.className="small mono";
-            extra.style.marginTop="10px";
-            extra.innerHTML=`NODE: AOG-04<br>SUPABASE: CONNECTED<br>ANON ID: ${esc(ANON_ID)}<br>CHAT NAME: ${esc(getTemporaryChatName()||"(nenhum)")}`;
-            el.appendChild(extra);
-        };
-    }else{
-        const login=()=>{
-            const user=document.getElementById("adminUser").value;
-            const pass=document.getElementById("adminPass").value;
-            if(user==="batu"&&pass==="bulat"){
-                sessionStorage.setItem("aogiri.admin.session","1");
+    if(!user){
+        content.innerHTML=`
+          <label>Usuário</label>
+          <input id="adminUser" class="admin-field" autocomplete="off" value="batu">
+          <label>Senha</label>
+          <input id="adminPass" class="admin-field" type="password" autocomplete="current-password">
+          <div id="adminError" class="small danger"></div>
+          <button id="adminLoginBtn" class="retro-btn">Entrar</button>
+          <button id="adminClose" class="retro-btn">Cancelar</button>`;
+
+        document.getElementById("adminClose").onclick=()=>overlay.remove();
+
+        const login=async()=>{
+            const userName=document.getElementById("adminUser").value;
+            const password=document.getElementById("adminPass").value;
+            const button=document.getElementById("adminLoginBtn");
+            const error=document.getElementById("adminError");
+            button.disabled=true;
+            error.textContent="Autenticando...";
+            try{
+                await adminSignIn(userName,password);
                 overlay.remove();
                 openAdminLogin();
-            }else{
-                document.getElementById("adminError").textContent="ACCESS DENIED";
+            }catch(err){
+                error.textContent="ACCESS DENIED";
+                button.disabled=false;
             }
         };
+
         document.getElementById("adminLoginBtn").onclick=login;
         document.getElementById("adminPass").onkeydown=e=>{if(e.key==="Enter")login()};
-        document.getElementById("adminUser").focus();
+        document.getElementById("adminPass").focus();
+        return;
     }
 
-    overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.remove()});
+    content.innerHTML=`
+      <div class="admin-panel">
+        <span class="admin-badge">ADMIN / SUPABASE AUTH</span>
+        <p>Autenticado como <b>batu</b>.</p>
+        <div id="adminStats" class="small">Carregando painel...</div>
+        <p>
+          <button id="adminRefresh" class="retro-btn">Atualizar</button>
+          <button id="adminLogout" class="retro-btn">Sair</button>
+          <button id="adminClose" class="retro-btn">Fechar</button>
+        </p>
+        <div id="adminModeration"></div>
+      </div>`;
+
+    document.getElementById("adminClose").onclick=()=>overlay.remove();
+    document.getElementById("adminLogout").onclick=async()=>{
+        await adminSignOut();
+        overlay.remove();
+    };
+
+    async function loadPanel(){
+        const stats=document.getElementById("adminStats");
+        const moderation=document.getElementById("adminModeration");
+        stats.textContent="Carregando...";
+        moderation.innerHTML="";
+
+        try{
+            const data=await adminDashboardData();
+
+            stats.innerHTML=`THREADS: ${data.counts.threads} · POSTS: ${data.counts.posts} · ARTIGOS: ${data.counts.articles} · COMENTÁRIOS: ${data.counts.comments} · CHAT: ${data.counts.chat}`;
+
+            moderation.innerHTML=`
+              <div class="h2">Chat recente</div>
+              ${data.chat.length?data.chat.map(m=>`
+                <div class="admin-mod-row">
+                  <div><b>${esc(m.chat_name)}</b> <span class="tiny muted">${esc(fmtDate(m.created_at))}</span><br>${esc(m.content)}</div>
+                  <button class="retro-btn adminDelete" data-type="chat" data-id="${m.id}">Excluir</button>
+                </div>`).join(""):"<div class='small muted'>Sem mensagens.</div>"}
+
+              <div class="h2">Posts recentes</div>
+              ${data.posts.length?data.posts.map(p=>`
+                <div class="admin-mod-row">
+                  <div><b>${esc(p.anon_id)}</b> · thread #${p.thread_id}<br>${esc(p.content)}</div>
+                  <button class="retro-btn adminDelete" data-type="post" data-id="${p.id}">Excluir</button>
+                </div>`).join(""):"<div class='small muted'>Sem posts.</div>"}
+
+              <div class="h2">Threads recentes</div>
+              ${data.threads.length?data.threads.map(t=>`
+                <div class="admin-mod-row">
+                  <div><b>#${t.id} ${esc(t.title)}</b><br><span class="tiny muted">${esc(t.anon_id)} · ${esc(t.board)}</span></div>
+                  <button class="retro-btn adminDelete" data-type="thread" data-id="${t.id}">Excluir</button>
+                </div>`).join(""):"<div class='small muted'>Sem threads.</div>"}
+
+              <div class="h2">Artigos comunitários recentes</div>
+              ${data.articles.length?data.articles.map(a=>`
+                <div class="admin-mod-row">
+                  <div><b>${esc(a.title)}</b><br><span class="tiny muted">${esc(a.anon_id)}</span></div>
+                  <button class="retro-btn adminDelete" data-type="article" data-id="${a.id}">Excluir</button>
+                </div>`).join(""):"<div class='small muted'>Sem artigos.</div>"}`;
+
+            moderation.querySelectorAll(".adminDelete").forEach(button=>{
+                button.onclick=async()=>{
+                    if(!confirm("Excluir este registro?"))return;
+                    button.disabled=true;
+                    try{
+                        await adminDeleteRecord(button.dataset.type,button.dataset.id);
+                        await loadPanel();
+                    }catch(err){
+                        alert("Não foi possível excluir. Confira as policies de administrador.");
+                        button.disabled=false;
+                    }
+                };
+            });
+        }catch(err){
+            stats.innerHTML="<span class='danger'>Falha ao carregar privilégios administrativos. Execute setup.sql e admin-link.sql.</span>";
+        }
+    }
+
+    document.getElementById("adminRefresh").onclick=loadPanel;
+    await loadPanel();
 }
 
 document.addEventListener("keydown",e=>{
@@ -633,6 +697,7 @@ document.addEventListener("keydown",e=>{
         openAdminLogin();
     }
 });
+
 
 function renderSites(){
     addressInput.value="http://directory.aogiri.local/";
