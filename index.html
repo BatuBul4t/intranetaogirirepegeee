@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aogiri Net 2001</title>
+<link rel="stylesheet" href="assets/css/global.css">
+<link rel="stylesheet" href="assets/css/browser.css">
+</head>
+<body>
+<div class="desktop">
+    <div class="taskbar">
+        <button class="start">▣ Iniciar</button>
+        <div class="tasklabel">Aogiri Internet Explorer</div>
+        <div id="clock" class="clock">00:00</div>
+    </div>
+
+    <div class="window">
+        <div class="titlebar">
+            <span>Aogiri Internet Explorer - 2001</span>
+            <div class="window-controls"><span>_</span><span>□</span><span>×</span></div>
+        </div>
+
+        <div class="menubar">Arquivo Editar Exibir Favoritos Ferramentas Ajuda</div>
+
+        <div class="toolbar">
+            <button id="backBtn">◀ Voltar</button>
+            <button id="forwardBtn">▶ Avançar</button>
+            <button id="stopBtn">■ Parar</button>
+            <button id="refreshBtn">⟳ Atualizar</button>
+            <button id="homeBtn">⌂ Início</button>
+            <button id="favoritesBtn">★ Favoritos</button>
+            <button id="historyBtn">☷ Histórico</button>
+        </div>
+
+        <div class="addressbar">
+            <span>Endereço</span>
+            <input id="addressInput" value="http://home.aogiri.local/">
+            <button id="goBtn">Ir</button>
+        </div>
+
+        <div class="browser-shell">
+            <aside class="sidebar">
+                <h2>AOGIRI NET</h2>
+                <p class="small">GATEWAY 04<br>56K MODEM<br>SESSION 2001</p>
+                <button class="side-link" data-route="home">Página inicial</button>
+                <button class="side-link" data-route="search">Pesquisar</button>
+                <button class="side-link" data-route="forum">2channel</button>
+                <button class="side-link" data-route="sites">Sites</button>
+                <button class="side-link" data-route="history">Histórico</button>
+                <button class="side-link" data-route="favorites">Favoritos</button>
+                <div class="sidebar-box">
+                    <b>Links rápidos</b>
+                    <a href="sites/google/index.html">Google</a>
+                    <a href="sites/yahoo/index.html">Yahoo!</a>
+                    <a href="sites/2channel/index.html">2channel</a>
+                    <a href="sites/slashdot/index.html">Slashdot</a>
+                    <a href="sites/newgrounds/index.html">Newgrounds</a>
+                </div>
+            </aside>
+
+            <main id="view" class="view"></main>
+        </div>
+
+        <div class="statusbar">
+            <span id="statusText">Pronto</span>
+            <span>Internet</span>
+        </div>
+    </div>
+</div>
+
+<script src="assets/js/data/searches.js"></script>
+<script src="assets/js/data/articles.js"></script>
+<script src="assets/js/data/forum.js"></script>
+<script src="assets/js/data/sites.js"></script>
+<script src="assets/js/storage.js"></script>
+<script src="assets/js/search-engine.js"></script>
+<script src="assets/js/forum.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Google 2001 Simulado</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:white;color:#111}a{color:#00e;text-decoration:underline}.wrap{max-width:900px;margin:20px auto;padding:15px}.tiny{font-size:11px;color:#666}.box{border:1px solid #aaa;padding:10px;margin:10px 0}
+</style>
+</head>
+<body>
+<div class="wrap"><div style="text-align:center;margin-top:60px">
+<h1 style="font:46px Times New Roman;margin-bottom:5px"><span style="color:#36c">G</span><span style="color:#c22">o</span><span style="color:#db0">o</span><span style="color:#36c">g</span><span style="color:#292">l</span><span style="color:#c22">e</span></h1>
+<div class="tiny">Simulação local · índice Aogiri 2001</div>
+<p><input id="q" style="width:55%;padding:4px"><button id="go">Google Search</button></p>
+<div id="r" style="text-align:left"></div>
+<p><a href="../../index.html">Voltar para Aogiri Net</a></p>
+</div></div>
+<script src="../../assets/js/data/articles.js"></script><script src="../../assets/js/search-engine.js"></script><script>
+const q=document.getElementById("q"),r=document.getElementById("r");
+function run(){const items=searchArticles(q.value);r.innerHTML=items.map(a=>`<div style="margin:14px 0"><a href="../../index.html">${a.title}</a><div style="color:green;font-size:11px">archive.aogiri.local/articles/${a.id}.html</div><div style="font-size:12px">${a.summary}</div></div>`).join("")||"<p>Nenhum resultado.</p>"}
+document.getElementById("go").onclick=run;q.onkeydown=e=>{if(e.key==="Enter")run()}
+</script>
+</body>
+</html>
