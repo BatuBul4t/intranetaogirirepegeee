@@ -1,213 +1,473 @@
 const view=document.getElementById("view");
 const statusText=document.getElementById("statusText");
 const addressInput=document.getElementById("addressInput");
+const onlineCount=document.getElementById("onlineCount");
+let activeRealtimeChannel=null;
 
-const esc=value=>String(value).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
+const esc=value=>String(value??"")
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+
+function fmtDate(value){
+    try{return new Date(value).toLocaleString("pt-BR")}catch(e){return String(value)}
+}
 
 function setStatus(text){statusText.textContent=text}
+
+function clearRealtime(){
+    if(activeRealtimeChannel){
+        sb.removeChannel(activeRealtimeChannel);
+        activeRealtimeChannel=null;
+    }
+}
 
 function updateClock(){
     document.getElementById("clock").textContent=new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})
 }
 updateClock();
 setInterval(updateClock,1000);
+startPresence(count=>onlineCount.textContent=count);
 
-function route(name,data={}){
-    if(name==="home") renderHome();
-    if(name==="search") renderSearch(data.query||"");
-    if(name==="article") renderArticle(data.id);
-    if(name==="forum") renderForum(data.board||"");
-    if(name==="thread") renderThread(data.id);
-    if(name==="sites") renderSites();
-    if(name==="history") renderHistory();
-    if(name==="favorites") renderFavorites();
+function pushHash(path){
+    if(location.hash!=="#"+path) location.hash=path;
+}
+
+function route(path){
+    clearRealtime();
+    const clean=(path||"home").replace(/^#/,"");
+    const [page,arg]=clean.split("/");
+    if(page==="home") return renderHome();
+    if(page==="search") return renderSearch(decodeURIComponent(arg||""));
+    if(page==="article") return renderArticle(arg);
+    if(page==="ccg") return renderCCG(decodeURIComponent(arg||""));
+    if(page==="publish") return renderPublishArticle();
+    if(page==="community") return renderCommunityArticles();
+    if(page==="community-article") return renderCommunityArticle(arg);
+    if(page==="forum") return renderForum(arg||"");
+    if(page==="thread") return renderThread(arg);
+    if(page==="sites") return renderSites();
+    if(page==="history") return renderHistory();
+    return renderHome();
 }
 
 function renderHome(){
     addressInput.value="http://home.aogiri.local/";
     view.innerHTML=`
-        <div class="search-hero">
-            <div class="h1">AOGIRI NET 2001</div>
-            <p>Portal local de pesquisa, fóruns e páginas arquivadas.</p>
-            <div class="search-row">
-                <input id="homeSearch" placeholder="Pesquisar na rede...">
-                <button id="homeSearchBtn">Pesquisar</button>
-            </div>
+      <div class="search-hero">
+        <div class="h1">AOGIRI NET 2001</div>
+        <div class="small mono">INTERNAL GATEWAY 04 :: ARCHIVE ONLINE :: <span class="blink">█</span></div>
+        <p>Pesquisa, arquivo CCG, fórum anônimo global e páginas arquivadas.</p>
+        <div class="search-row">
+          <input id="homeSearch" placeholder="Pesquisar na rede...">
+          <button id="homeSearchBtn">Pesquisar</button>
         </div>
-        <div class="h2">Sites populares</div>
-        <div class="site-grid">
-            ${SITES.map(site=>`<div class="site-card"><h3><a href="${site.url}">${esc(site.name)}</a></h3><div class="small muted">${esc(site.description)}</div></div>`).join("")}
-        </div>
-        <div class="h2">Pesquisas recentes</div>
-        ${getHistory().slice(0,10).map(item=>`<div class="history-item"><span class="linkish history-query">${esc(item.query)}</span><div class="small muted">${esc(item.engine)} · ${esc(item.date)}</div></div>`).join("")}
+      </div>
+
+      <div class="h2">Acesso rápido</div>
+      <div class="grid">
+        <div class="card"><h3><a href="#ccg">Arquivo CCG</a></h3><p>${ARTICLES.filter(a=>a.id.startsWith("ccg-")).length} documentos indexados.</p></div>
+        <div class="card"><h3><a href="#publish">Publicar Artigo</a></h3><p>Crie um artigo compartilhado para todos os visitantes.</p></div>
+        <div class="card"><h3><a href="#community">Artigos da Comunidade</a></h3><p>Veja publicações enviadas em tempo real.</p></div>
+        <div class="card"><h3><a href="#forum/ccg">2channel / CCG</a></h3><p>Fórum compartilhado via Supabase Realtime.</p></div>
+        <div class="card"><h3><a href="#forum/occult">Ocultismo</a></h3><p>Rumores, relatos noturnos e teorias.</p></div>
+        <div class="card"><h3><a href="#search/Projeto%20Senkii">Projeto Senkii</a></h3><p>Pesquisar entradas relacionadas no índice.</p></div>
+      </div>
+
+      <div class="h2">Arquivo em destaque</div>
+      ${ARTICLES.filter(a=>a.id.startsWith("ccg-")).slice(24,32).map(a=>`
+        <div class="result"><h3 data-article="${a.id}">${esc(a.title)}</h3>
+        <div class="meta">${esc(a.site)} · ${esc(a.date)}</div><p>${esc(a.summary)}</p></div>
+      `).join("")}
     `;
-    document.getElementById("homeSearchBtn").onclick=()=>route("search",{query:document.getElementById("homeSearch").value});
-    document.getElementById("homeSearch").onkeydown=e=>{if(e.key==="Enter") route("search",{query:e.target.value})};
-    view.querySelectorAll(".history-query").forEach(el=>el.onclick=()=>route("search",{query:el.textContent}));
+    document.getElementById("homeSearchBtn").onclick=()=>pushHash("search/"+encodeURIComponent(document.getElementById("homeSearch").value));
+    document.getElementById("homeSearch").onkeydown=e=>{if(e.key==="Enter")document.getElementById("homeSearchBtn").click()};
+    view.querySelectorAll("[data-article]").forEach(el=>el.onclick=()=>pushHash("article/"+el.dataset.article));
     setStatus("Página inicial carregada")
 }
 
 function renderSearch(initial=""){
     addressInput.value="http://search.aogiri.local/?q="+encodeURIComponent(initial);
+    const categories=[...new Set(ARTICLES.map(a=>a.category))].sort();
     view.innerHTML=`
-        <div class="h1">Pesquisar na Internet</div>
-        <div class="search-row">
-            <div style="flex:1;position:relative">
-                <input id="searchBox" style="width:100%;padding:7px;border:2px inset #ddd" value="${esc(initial)}" autocomplete="off">
-                <div id="suggestions"></div>
-            </div>
-            <button id="searchDo">Pesquisar</button>
+      <div class="h1">Pesquisar na Internet</div>
+      <div class="search-row">
+        <div style="position:relative;flex:1">
+          <input id="searchBox" style="width:100%" value="${esc(initial)}" autocomplete="off">
+          <div id="suggestions"></div>
         </div>
-        <div id="searchResults"></div>
-    `;
+        <select id="searchCategory"><option value="">Tudo</option>${categories.map(c=>`<option>${esc(c)}</option>`).join("")}</select>
+        <button id="searchDo">Pesquisar</button>
+      </div>
+      <div id="searchResults"></div>`;
     const box=document.getElementById("searchBox");
     const sug=document.getElementById("suggestions");
     function refreshSuggestions(){
-        const items=searchSuggestions(box.value);
+        const items=getSuggestions(box.value);
         sug.className=items.length?"suggestions":"";
         sug.innerHTML=items.map(q=>`<div class="suggestion">${esc(q)}</div>`).join("");
-        sug.querySelectorAll(".suggestion").forEach(el=>el.onclick=()=>{box.value=el.textContent;doSearch()})
+        sug.querySelectorAll(".suggestion").forEach(el=>el.onclick=()=>{box.value=el.textContent;run()})
     }
-    function doSearch(){
+    function run(){
         const q=box.value.trim();
-        addHistory(q,"Aogiri Search");
-        const results=searchArticles(q);
+        const cat=document.getElementById("searchCategory").value;
+        if(q){
+            const hist=JSON.parse(localStorage.getItem("aogiri.history")||"[]");
+            hist.unshift({query:q,date:new Date().toLocaleString("pt-BR")});
+            localStorage.setItem("aogiri.history",JSON.stringify(hist.slice(0,200)));
+        }
+        const results=searchArticles(q,cat);
         document.getElementById("searchResults").innerHTML=`
-            <p class="small muted">${results.length} resultado(s) no índice local.</p>
-            ${results.map(a=>`
-                <div class="result">
-                    <h3 data-id="${esc(a.id)}">${esc(a.title)}</h3>
-                    <div class="url">http://archive.aogiri.local/articles/${esc(a.id)}.html</div>
-                    <div class="meta">${esc(a.site)} · ${esc(a.date)} · ${esc(a.category)}</div>
-                    <p>${esc(a.summary)}</p>
-                </div>
-            `).join("") || `<div class="panel"><b>Nenhum resultado encontrado.</b><p>O índice simulado de 2001 não encontrou páginas para esta consulta.</p></div>`}
-        `;
-        document.querySelectorAll(".result h3").forEach(el=>el.onclick=()=>route("article",{id:el.dataset.id}));
-        sug.innerHTML="";
-        sug.className="";
-        addressInput.value="http://search.aogiri.local/?q="+encodeURIComponent(q);
+          <p class="small muted">${results.length} resultado(s).</p>
+          ${results.map(a=>`
+            <div class="result">
+              <h3 data-article="${a.id}">${esc(a.title)}</h3>
+              <div class="url">http://archive.aogiri.local/${esc(a.id)}.html</div>
+              <div class="meta">${esc(a.site)} · ${esc(a.date)} · ${esc(a.category)}</div>
+              <p>${esc(a.summary)}</p>
+            </div>`).join("") || `<div class="notice">Nenhum resultado encontrado no índice de 2001.</div>`}`;
+        document.querySelectorAll("[data-article]").forEach(el=>el.onclick=()=>pushHash("article/"+el.dataset.article));
+        sug.className="";sug.innerHTML="";
         setStatus("Pesquisa concluída")
     }
     box.oninput=refreshSuggestions;
-    box.onkeydown=e=>{if(e.key==="Enter")doSearch()};
-    document.getElementById("searchDo").onclick=doSearch;
-    if(initial) doSearch();
-    else refreshSuggestions()
+    box.onkeydown=e=>{if(e.key==="Enter")run()};
+    document.getElementById("searchDo").onclick=run;
+    document.getElementById("searchCategory").onchange=run;
+    if(initial) run()
 }
 
-function renderArticle(id){
-    const a=ARTICLES.find(item=>item.id===id);
-    if(!a){view.innerHTML="<h1>404</h1><p>Documento não encontrado.</p>";return}
-    addressInput.value="http://archive.aogiri.local/articles/"+a.id+".html";
-    const fav=getFavorites().includes(a.id);
+async function renderArticle(id){
+    const a=ARTICLES.find(x=>x.id===id);
+    if(!a){view.innerHTML="<div class='errorbox'>404 - Documento não encontrado.</div>";return}
+    addressInput.value="http://archive.aogiri.local/"+a.id+".html";
     view.innerHTML=`
+      <div class="${a.id.startsWith("ccg-")?"ccg-header":""}">
         <div class="h1">${esc(a.title)}</div>
-        <div class="small muted">${esc(a.site)} · ${esc(a.date)} · ${esc(a.category)}</div>
-        <hr class="sep">
-        <p style="line-height:1.7;white-space:pre-wrap">${esc(a.body)}</p>
-        <div>${(a.keywords||[]).map(k=>`<span class="tag">${esc(k)}</span>`).join("")}</div>
-        <hr class="sep">
-        <button id="favArticle">${fav?"Remover dos favoritos":"Adicionar aos favoritos"}</button>
-    `;
-    document.getElementById("favArticle").onclick=()=>{toggleFavorite(a.id);renderArticle(a.id)};
-    setStatus("Documento carregado")
+        <div class="small">${esc(a.site)} · ${esc(a.date)} · ${esc(a.category)}</div>
+      </div>
+      <p style="white-space:pre-wrap;line-height:1.65">${esc(a.body)}</p>
+      <div>${(a.keywords||[]).map(k=>`<span class="tag">${esc(k)}</span>`).join("")}</div>
+      <div class="comments">
+        <div class="h2">Comentários do arquivo</div>
+        <div class="small muted">Comentários são compartilhados em tempo real. Você aparece como <b>${esc(ANON_ID)}</b>.</div>
+        <div id="commentsList"><p class="small">Carregando...</p></div>
+        <div class="forum-form">
+          <textarea id="commentText" class="forum-input" maxlength="2500" placeholder="Adicionar comentário anônimo..."></textarea>
+          <button id="commentBtn" class="retro-btn">Enviar comentário</button>
+        </div>
+      </div>`;
+    async function refresh(){
+        try{
+            const comments=await loadComments(a.id);
+            document.getElementById("commentsList").innerHTML=comments.length?comments.map(c=>`
+              <div class="comment"><b>${esc(c.anon_id)}</b> <span class="tiny muted">${esc(fmtDate(c.created_at))}</span>
+              <div>${esc(c.content)}</div></div>`).join(""):"<p class='small muted'>Nenhum comentário ainda.</p>";
+        }catch(err){
+            document.getElementById("commentsList").innerHTML="<div class='errorbox'>Banco ainda não configurado. Execute sql/setup.sql no Supabase.</div>"
+        }
+    }
+    await refresh();
+    document.getElementById("commentBtn").onclick=async()=>{
+        const text=document.getElementById("commentText").value.trim();
+        if(!text)return;
+        try{await createComment(a.id,text);document.getElementById("commentText").value=""}
+        catch(err){alert("Não foi possível enviar. Confira o setup do Supabase.")}
+    };
+    activeRealtimeChannel=subscribeComments(a.id,()=>refresh());
+    setStatus("Documento aberto")
 }
+
+function renderCCG(filter=""){
+    addressInput.value="http://archive.ccg.go.jp/index.asp";
+    const cats=[...new Set(ARTICLES.filter(a=>a.id.startsWith("ccg-")).map(a=>a.category))].sort();
+    const items=ARTICLES.filter(a=>a.id.startsWith("ccg-") && (!filter||a.category===filter));
+    view.innerHTML=`
+      <div class="ccg-header">
+        <div class="h1">CCG DIGITAL ARCHIVE</div>
+        <div class="small">COMMISSION OF COUNTER GHOUL :: MIRROR 2001 :: ACCESS LEVEL: PUBLIC/RECOVERED</div>
+      </div>
+      <div class="notice">Este arquivo é ficcional e faz parte do cenário do site.</div>
+      <div class="ccg-nav"><button class="retro-btn ccgCat" data-cat="">Todos (${ARTICLES.filter(a=>a.id.startsWith("ccg-")).length})</button>
+      ${cats.map(c=>`<button class="retro-btn ccgCat" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+      <div class="ccg-list">
+        ${items.map(a=>`<div class="ccg-row">
+          <span class="mono">${esc(a.id.toUpperCase())}</span>
+          <span class="linkish" data-article="${a.id}">${esc(a.title)}</span>
+          <span>${esc(a.category)}</span>
+        </div>`).join("")}
+      </div>`;
+    view.querySelectorAll(".ccgCat").forEach(el=>el.onclick=()=>pushHash("ccg/"+encodeURIComponent(el.dataset.cat)));
+    view.querySelectorAll("[data-article]").forEach(el=>el.onclick=()=>pushHash("article/"+el.dataset.article));
+    setStatus(items.length+" registros CCG")
+}
+
+function renderSeedForum(board){
+    const rows=SEED_THREADS.filter(t=>!board||t.board===board);
+    return rows.map((t,i)=>`
+      <div class="thread-line">
+        <b>${esc(t.title)}</b>
+        <div class="tiny muted">arquivo local · ${t.posts.length} respostas</div>
+        ${t.posts.slice(0,2).map((p,j)=>`<div class="tiny" style="margin-top:4px">${j+1} 名前：名無しさん — ${esc(p)}</div>`).join("")}
+      </div>`).join("")
+}
+
+async function renderForum(board=""){
+    addressInput.value="http://www.2ch.net/"+(board||"");
+    view.innerHTML=`
+      <div class="forum-head">
+        <div class="h1">２ちゃんねる / Aogiri Mirror</div>
+        <div class="small"><span class="online-dot"></span><span id="forumOnline">${onlineCount.textContent}</span> online · seu ID: ${esc(ANON_ID)}</div>
+      </div>
+      <div class="forum-layout">
+        <div class="board-list">
+          <b>Boards</b>
+          <div class="board-link" data-board="">Todas</div>
+          ${FORUM_BOARDS.map(b=>`<div class="board-link" data-board="${b.id}">${esc(b.name)}<div class="tiny muted">${esc(b.description)}</div></div>`).join("")}
+        </div>
+        <div>
+          <div id="globalThreads"><p class="small">Conectando ao servidor...</p></div>
+          <div class="h2">Threads arquivadas do cenário</div>
+          <div class="thread-list">${renderSeedForum(board)}</div>
+          <div class="forum-form">
+            <b>Nova thread global</b>
+            <p><select id="newBoard">${FORUM_BOARDS.map(b=>`<option value="${b.id}" ${b.id===board?"selected":""}>${esc(b.name)}</option>`).join("")}</select></p>
+            <input id="newTitle" maxlength="140" placeholder="Título" style="width:100%;padding:6px">
+            <textarea id="newPost" maxlength="4000" class="forum-input" placeholder="Mensagem"></textarea>
+            <button id="newThreadBtn" class="retro-btn">Postar como ${esc(ANON_ID)}</button>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById("forumOnline").textContent=onlineCount.textContent;
+    view.querySelectorAll(".board-link").forEach(el=>el.onclick=()=>pushHash("forum/"+el.dataset.board));
+
+    async function refresh(){
+        try{
+            const rows=await loadThreads(board);
+            document.getElementById("globalThreads").innerHTML=`
+              <div class="h2">Threads globais em tempo real</div>
+              <div class="thread-list">${rows.length?rows.map(t=>`
+                <div class="thread-line" data-thread="${t.id}">
+                  <b>${esc(t.title)}</b>
+                  <div class="tiny muted">#${t.id} · ${esc(t.anon_id)} · ${t.reply_count} post(s) · bump ${esc(fmtDate(t.last_post_at))}</div>
+                </div>`).join(""):"<div class='thread-line'>Nenhuma thread global neste board ainda.</div>"}</div>`;
+            document.querySelectorAll("[data-thread]").forEach(el=>el.onclick=()=>pushHash("thread/"+el.dataset.thread));
+        }catch(err){
+            document.getElementById("globalThreads").innerHTML="<div class='errorbox'><b>Banco não configurado.</b><br>Abra o Supabase SQL Editor e execute o arquivo <span class='mono'>sql/setup.sql</span>.</div>";
+        }
+    }
+    await refresh();
+    document.getElementById("newThreadBtn").onclick=async()=>{
+        const title=document.getElementById("newTitle").value.trim();
+        const content=document.getElementById("newPost").value.trim();
+        const newBoard=document.getElementById("newBoard").value;
+        if(!title||!content)return alert("Preencha título e mensagem.");
+        try{
+            const thread=await createGlobalThread(newBoard,title,content);
+            pushHash("thread/"+thread.id)
+        }catch(err){alert("Falha ao criar thread. Execute sql/setup.sql no Supabase e tente novamente.")}
+    };
+    activeRealtimeChannel=subscribeBoard(board,()=>refresh());
+    setStatus("Fórum global conectado")
+}
+
+function postText(text){
+    return esc(text).replace(/&gt;&gt;(\d+)/g,'<span class="post-ref" data-ref="$1">&gt;&gt;$1</span>').replace(/\n/g,"<br>")
+}
+
+async function renderThread(id){
+    addressInput.value="http://www.2ch.net/test/read.cgi/aogiri/"+id+"/";
+    view.innerHTML="<p>Carregando thread...</p>";
+    try{
+        const {data:thread,error}=await sb.from("forum_threads").select("*").eq("id",id).single();
+        if(error)throw error;
+        const posts=await loadPosts(id);
+        view.innerHTML=`
+          <div class="forum-head"><b>#${thread.id} ${esc(thread.title)}</b>
+          <div class="tiny">${esc(thread.board)} · iniciado por ${esc(thread.anon_id)}</div></div>
+          <div id="postsBox" class="thread"></div>
+          <div class="forum-form">
+            <b>Responder como ${esc(ANON_ID)}</b>
+            <textarea id="replyText" maxlength="4000" class="forum-input"></textarea>
+            <button id="replyBtn" class="retro-btn">Enviar resposta</button>
+            <button id="backBoard" class="retro-btn">Voltar ao board</button>
+          </div>`;
+        function draw(rows){
+            document.getElementById("postsBox").innerHTML=rows.map((p,index)=>`
+              <div class="post" id="post-${p.id}">
+                <div class="post-head">${index+1} 名前：${esc(p.anon_id)} <span class="tiny muted">${esc(fmtDate(p.created_at))} ID:${p.id}</span></div>
+                <div>${postText(p.content)}</div>
+              </div>`).join("");
+            document.querySelectorAll(".post-ref").forEach(el=>el.onclick=()=>{
+                const target=document.querySelector("#post-"+el.dataset.ref);
+                if(target)target.scrollIntoView({behavior:"smooth",block:"center"})
+            });
+        }
+        draw(posts);
+        document.getElementById("replyBtn").onclick=async()=>{
+            const text=document.getElementById("replyText").value.trim();
+            if(!text)return;
+            try{
+                await createGlobalPost(id,text);
+                document.getElementById("replyText").value=""
+            }catch(err){alert("Não foi possível enviar a resposta.")}
+        };
+        document.getElementById("backBoard").onclick=()=>pushHash("forum/"+thread.board);
+        activeRealtimeChannel=subscribeThread(id,async()=>draw(await loadPosts(id)));
+        setStatus("Thread #"+id+" conectada em tempo real")
+    }catch(err){
+        view.innerHTML="<div class='errorbox'>Thread não encontrada ou banco ainda não configurado.</div>"
+    }
+}
+
+
+async function renderCommunityArticles(){
+    addressInput.value="http://archive.aogiri.local/community/";
+    view.innerHTML=`
+      <div class="h1">Artigos da Comunidade</div>
+      <div class="notice">Publicações feitas por visitantes aparecem aqui para todo mundo em tempo real.</div>
+      <p><button id="openPublish" class="retro-btn">Publicar novo artigo</button></p>
+      <div id="communityList"><p class="small">Carregando publicações...</p></div>`;
+    document.getElementById("openPublish").onclick=()=>pushHash("publish");
+
+    async function refresh(){
+        try{
+            const rows=await loadCommunityArticles();
+            document.getElementById("communityList").innerHTML=rows.length?rows.map(a=>`
+              <div class="result">
+                <h3 data-community-id="${a.id}">${esc(a.title)}</h3>
+                <div class="url">http://archive.aogiri.local/community/${a.id}.html</div>
+                <div class="meta">${esc(a.source_name)} · ${esc(a.date_label)} · ${esc(a.category)} · por ${esc(a.anon_id)}</div>
+                <p>${esc(a.summary)}</p>
+                <div>${(a.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div>
+              </div>`).join(""):"<p class='small muted'>Ainda não há artigos publicados pela comunidade.</p>";
+            view.querySelectorAll("[data-community-id]").forEach(el=>el.onclick=()=>pushHash("community-article/"+el.dataset.communityId));
+        }catch(err){
+            document.getElementById("communityList").innerHTML="<div class='errorbox'><b>Banco ainda não configurado para artigos comunitários.</b><br>Execute novamente <span class='mono'>sql/setup.sql</span> no Supabase.</div>";
+        }
+    }
+
+    await refresh();
+    activeRealtimeChannel=subscribeCommunityArticles(()=>refresh());
+    setStatus("Artigos comunitários em tempo real");
+}
+
+function renderPublishArticle(){
+    addressInput.value="http://archive.aogiri.local/community/new.asp";
+    view.innerHTML=`
+      <div class="h1">Publicar Artigo</div>
+      <div class="notice">O artigo ficará visível para todos os visitantes. Seu identificador público será <b>${esc(ANON_ID)}</b>.</div>
+      <div class="forum-form">
+        <p><b>Título</b><br><input id="pubTitle" maxlength="180" style="width:100%;padding:7px"></p>
+        <p><b>Categoria</b><br>
+          <select id="pubCategory">
+            <option>Comunidade</option>
+            <option>CCG</option>
+            <option>Notícias</option>
+            <option>Rumores</option>
+            <option>Tecnologia</option>
+            <option>Vida prática</option>
+            <option>Cultura</option>
+            <option>Pesquisa</option>
+            <option>Arquivo</option>
+          </select>
+        </p>
+        <p><b>Fonte / site</b><br><input id="pubSource" maxlength="120" value="Arquivo Comunitário" style="width:100%;padding:7px"></p>
+        <p><b>Data mostrada no artigo</b><br><input id="pubDate" maxlength="40" value="2001" style="width:100%;padding:7px"></p>
+        <p><b>Resumo</b><br><textarea id="pubSummary" maxlength="600" class="forum-input" style="min-height:70px"></textarea></p>
+        <p><b>Conteúdo</b><br><textarea id="pubBody" maxlength="12000" class="forum-input" style="min-height:260px"></textarea></p>
+        <p><b>Tags</b> <span class="tiny muted">separadas por vírgula</span><br><input id="pubTags" maxlength="500" placeholder="ccg, distrito 20, rumor" style="width:100%;padding:7px"></p>
+        <button id="publishArticleBtn" class="retro-btn">PUBLICAR PARA TODOS</button>
+        <button id="cancelPublishBtn" class="retro-btn">Cancelar</button>
+        <div id="publishStatus" class="small" style="margin-top:10px"></div>
+      </div>`;
+    document.getElementById("cancelPublishBtn").onclick=()=>pushHash("community");
+    document.getElementById("publishArticleBtn").onclick=async()=>{
+        const title=document.getElementById("pubTitle").value.trim();
+        const summary=document.getElementById("pubSummary").value.trim();
+        const body=document.getElementById("pubBody").value.trim();
+        if(!title||!summary||!body){
+            document.getElementById("publishStatus").innerHTML="<span class='danger'>Preencha título, resumo e conteúdo.</span>";
+            return;
+        }
+        const button=document.getElementById("publishArticleBtn");
+        button.disabled=true;
+        document.getElementById("publishStatus").textContent="Publicando...";
+        try{
+            const article=await createCommunityArticle({
+                title,
+                category:document.getElementById("pubCategory").value,
+                source_name:document.getElementById("pubSource").value.trim()||"Arquivo Comunitário",
+                date_label:document.getElementById("pubDate").value.trim()||"2001",
+                summary,
+                body,
+                tags:document.getElementById("pubTags").value.split(",").map(x=>x.trim()).filter(Boolean).slice(0,20)
+            });
+            pushHash("community-article/"+article.id);
+        }catch(err){
+            button.disabled=false;
+            document.getElementById("publishStatus").innerHTML="<span class='danger'>Falha ao publicar. Execute o setup.sql atualizado no Supabase.</span>";
+        }
+    };
+    setStatus("Editor de artigo aberto");
+}
+
+async function renderCommunityArticle(id){
+    addressInput.value="http://archive.aogiri.local/community/"+id+".html";
+    view.innerHTML="<p>Carregando artigo...</p>";
+    try{
+        const a=await loadCommunityArticle(id);
+        view.innerHTML=`
+          <div class="ccg-header">
+            <div class="h1">${esc(a.title)}</div>
+            <div class="small">${esc(a.source_name)} · ${esc(a.date_label)} · ${esc(a.category)} · publicado por ${esc(a.anon_id)}</div>
+          </div>
+          <p style="white-space:pre-wrap;line-height:1.7">${esc(a.body)}</p>
+          <div>${(a.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div>
+          <hr class="sep">
+          <div class="small muted">Publicado no banco global em ${esc(fmtDate(a.created_at))}.</div>
+          <p><button id="backCommunity" class="retro-btn">Voltar aos artigos da comunidade</button></p>`;
+        document.getElementById("backCommunity").onclick=()=>pushHash("community");
+        setStatus("Artigo comunitário aberto");
+    }catch(err){
+        view.innerHTML="<div class='errorbox'>Artigo não encontrado ou banco ainda não configurado.</div>";
+    }
+}
+
 
 function renderSites(){
-    addressInput.value="http://directory.aogiri.local/sites/";
+    addressInput.value="http://directory.aogiri.local/";
     view.innerHTML=`
-        <div class="h1">Diretório de Sites</div>
-        <div class="site-grid">${SITES.map(site=>`
-            <div class="site-card">
-                <h3><a href="${site.url}">${esc(site.name)}</a></h3>
-                <div class="small muted">${esc(site.year)}</div>
-                <p>${esc(site.description)}</p>
-            </div>`).join("")}
-        </div>`;
+      <div class="h1">Diretório de Sites</div>
+      <div class="grid">
+        <div class="card"><h3><a href="sites/ccg/index.html">CCG Archive</a></h3><p>Mirror institucional.</p></div>
+        <div class="card"><h3><a href="sites/2channel/index.html">2channel</a></h3><p>Entrada para o fórum anônimo.</p></div>
+        <div class="card"><h3><a href="sites/google/index.html">Google</a></h3><p>Busca minimalista.</p></div>
+        <div class="card"><h3><a href="sites/yahoo/index.html">Yahoo!</a></h3><p>Portal e diretório.</p></div>
+      </div>`;
     setStatus("Diretório carregado")
 }
 
 function renderHistory(){
-    addressInput.value="http://history.aogiri.local/";
-    const history=getHistory();
-    view.innerHTML=`
-        <div class="h1">Histórico de pesquisa</div>
-        <button id="clearHistory">Limpar histórico local</button>
-        <div>${history.map(item=>`<div class="history-item"><span class="linkish history-query">${esc(item.query)}</span><div class="small muted">${esc(item.engine)} · ${esc(item.date)}</div></div>`).join("")}</div>
-    `;
-    view.querySelectorAll(".history-query").forEach(el=>el.onclick=()=>route("search",{query:el.textContent}));
-    document.getElementById("clearHistory").onclick=()=>{Store.set("aogiri.history",[]);renderHistory()};
-    setStatus(history.length+" item(ns) no histórico")
+    const hist=JSON.parse(localStorage.getItem("aogiri.history")||"[]");
+    view.innerHTML=`<div class="h1">Histórico local</div>${hist.length?hist.map(x=>`
+      <div class="result"><h3 data-q="${esc(x.query)}">${esc(x.query)}</h3><div class="meta">${esc(x.date)}</div></div>`).join(""):"<p>Nenhuma pesquisa local ainda.</p>"}`;
+    view.querySelectorAll("[data-q]").forEach(el=>el.onclick=()=>pushHash("search/"+encodeURIComponent(el.dataset.q)));
+    setStatus(hist.length+" pesquisas locais")
 }
 
-function renderFavorites(){
-    addressInput.value="http://favorites.aogiri.local/";
-    const favs=getFavorites().map(id=>ARTICLES.find(a=>a.id===id)).filter(Boolean);
-    view.innerHTML=`<div class="h1">Favoritos</div>${favs.length?favs.map(a=>`<div class="result"><h3 data-id="${a.id}">${esc(a.title)}</h3><p>${esc(a.summary)}</p></div>`).join(""):"<p>Nenhum favorito salvo.</p>"}`;
-    view.querySelectorAll(".result h3").forEach(el=>el.onclick=()=>route("article",{id:el.dataset.id}));
-    setStatus("Favoritos carregados")
-}
-
-function renderForum(board=""){
-    addressInput.value="http://www.2ch.net/"+(board||"");
-    const boards=FORUM_BOARDS;
-    const threads=allThreads().filter(t=>!board||t.board===board);
-    view.innerHTML=`
-        <div class="forum-head">
-            <div class="h1">2channel mirror</div>
-            <div class="small">Fórum de texto anônimo simulado</div>
-        </div>
-        <div style="margin:10px 0">${boards.map(b=>`<button class="boardBtn" data-board="${b.id}">${esc(b.name)}</button>`).join(" ")}</div>
-        <div>${threads.map(t=>`<div class="thread"><div class="post"><b class="linkish threadLink" data-id="${t.id}">#${t.id} ${esc(t.title)}</b><div class="small muted">${t.posts.length} resposta(s)</div></div></div>`).join("")}</div>
-        <div class="forum-form">
-            <b>Criar nova thread</b>
-            <p><select id="newBoard">${boards.map(b=>`<option value="${b.id}" ${b.id===board?"selected":""}>${esc(b.name)}</option>`).join("")}</select></p>
-            <p><input id="newTitle" placeholder="Título" style="width:100%;padding:6px"></p>
-            <textarea id="newText" class="forum-input" placeholder="Mensagem"></textarea>
-            <p><button id="newThreadBtn">Postar como 名無しさん</button></p>
-        </div>
-    `;
-    view.querySelectorAll(".boardBtn").forEach(el=>el.onclick=()=>renderForum(el.dataset.board));
-    view.querySelectorAll(".threadLink").forEach(el=>el.onclick=()=>route("thread",{id:el.dataset.id}));
-    document.getElementById("newThreadBtn").onclick=()=>{
-        const id=createThread(document.getElementById("newBoard").value,document.getElementById("newTitle").value,document.getElementById("newText").value);
-        route("thread",{id})
-    };
-    setStatus("2channel carregado")
-}
-
-function renderThread(id){
-    const t=allThreads().find(item=>String(item.id)===String(id));
-    if(!t){view.innerHTML="<h1>Thread não encontrada</h1>";return}
-    addressInput.value="http://www.2ch.net/test/read.cgi/"+t.board+"/"+t.id+"/";
-    view.innerHTML=`
-        <div class="forum-head"><b>${esc(t.title)}</b></div>
-        <div class="thread">${t.posts.map(p=>`
-            <div class="post">
-                <div class="post-head">${p.id} 名前：${esc(p.author)} <span class="post-id">${esc(p.date)}</span></div>
-                <div>${esc(p.text)}</div>
-            </div>`).join("")}
-        </div>
-        <div class="forum-form">
-            <b>Responder</b>
-            <textarea id="replyText" class="forum-input"></textarea>
-            <p><button id="replyBtn">Enviar</button> <button id="backForum">Voltar ao board</button></p>
-        </div>
-    `;
-    document.getElementById("replyBtn").onclick=()=>{const text=document.getElementById("replyText").value;if(text.trim()){replyThread(t.id,text);renderThread(t.id)}};
-    document.getElementById("backForum").onclick=()=>renderForum(t.board);
-    setStatus("Thread #"+t.id)
-}
-
-document.querySelectorAll(".side-link").forEach(btn=>btn.onclick=()=>route(btn.dataset.route));
-document.getElementById("homeBtn").onclick=()=>route("home");
-document.getElementById("historyBtn").onclick=()=>route("history");
-document.getElementById("favoritesBtn").onclick=()=>route("favorites");
-document.getElementById("refreshBtn").onclick=()=>location.reload();
+document.querySelectorAll(".side-link").forEach(btn=>btn.onclick=()=>pushHash(btn.dataset.route));
+document.getElementById("homeBtn").onclick=()=>pushHash("home");
+document.getElementById("historyBtn").onclick=()=>pushHash("history");
+document.getElementById("refreshBtn").onclick=()=>route(location.hash||"#home");
 document.getElementById("stopBtn").onclick=()=>setStatus("Carregamento interrompido");
 document.getElementById("backBtn").onclick=()=>history.back();
 document.getElementById("forwardBtn").onclick=()=>history.forward();
-document.getElementById("goBtn").onclick=()=>{const value=addressInput.value.trim();if(value.includes("2ch"))route("forum");else if(value.includes("search"))route("search");else route("home")};
-addressInput.onkeydown=e=>{if(e.key==="Enter")document.getElementById("goBtn").click()};
-route("home");
+document.getElementById("goBtn").onclick=()=>{
+    const value=addressInput.value.toLowerCase();
+    if(value.includes("2ch"))pushHash("forum");
+    else if(value.includes("ccg"))pushHash("ccg");
+    else if(value.includes("search"))pushHash("search");
+    else pushHash("home")
+};
+window.addEventListener("hashchange",()=>route(location.hash));
+route(location.hash||"#home");

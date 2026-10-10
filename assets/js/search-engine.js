@@ -3,41 +3,28 @@ function norm(value){
 }
 
 function articleText(article){
-    return norm([
-        article.title,
-        article.category,
-        article.site,
-        article.summary,
-        article.body,
-        ...(article.keywords||[])
-    ].join(" "))
+    return norm([article.title,article.category,article.site,article.summary,article.body,...(article.keywords||[])].join(" "))
 }
 
-function searchArticles(query){
+function searchArticles(query,category=""){
     const words=norm(query).split(/\s+/).filter(Boolean);
-    if(!words.length) return ARTICLES.slice();
-    return ARTICLES
-        .map(article=>{
-            const text=articleText(article);
-            let score=0;
-            words.forEach(word=>{
-                if(norm(article.title).includes(word)) score+=6;
-                if(norm((article.keywords||[]).join(" ")).includes(word)) score+=4;
-                if(text.includes(word)) score+=1
-            });
-            return {article,score}
-        })
-        .filter(item=>item.score>0)
-        .sort((a,b)=>b.score-a.score)
-        .map(item=>item.article)
+    return ARTICLES.map(article=>{
+        if(category && article.category!==category) return {article,score:-1};
+        const text=articleText(article);
+        let score=words.length?0:1;
+        words.forEach(word=>{
+            if(norm(article.title).includes(word)) score+=8;
+            if(norm((article.keywords||[]).join(" ")).includes(word)) score+=4;
+            if(norm(article.summary).includes(word)) score+=2;
+            if(text.includes(word)) score+=1;
+        });
+        return {article,score}
+    }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).map(x=>x.article)
 }
 
-function searchSuggestions(query){
+function getSuggestions(query){
     const q=norm(query);
     if(!q) return [];
-    return SEARCH_HISTORY_SEED
-        .map(item=>item.query)
-        .filter((value,index,array)=>array.indexOf(value)===index)
-        .filter(value=>norm(value).includes(q))
-        .slice(0,8)
+    const sources=[...SEARCH_SUGGESTIONS,...ARTICLES.map(a=>a.title)];
+    return [...new Set(sources)].filter(x=>norm(x).includes(q)).slice(0,10)
 }

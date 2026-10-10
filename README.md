@@ -1,41 +1,60 @@
-# Aogiri Net 2001
+# Aogiri Net 2001 — Supabase Realtime Edition
 
-Projeto estático feito para GitHub Pages.
+Projeto estático para GitHub Pages com fórum anônimo global e comentários globais via Supabase.
 
-## Publicar
+## Já configurado no frontend
 
-1. Crie um repositório novo no GitHub.
-2. Extraia o ZIP.
-3. Envie todo o conteúdo da pasta `aogiri-net-2001` para a raiz do repositório.
-4. Abra `Settings > Pages`.
-5. Em `Build and deployment`, escolha `Deploy from a branch`.
-6. Selecione `main` e `/ (root)`.
-7. Salve.
+- Project URL: `https://xklxpjposqndxesnsttv.supabase.co`
+- Publishable key: incluída em `assets/js/config.js`
+- 60 artigos CCG + artigos extras
+- Arquivo CCG pesquisável por categoria
+- Fórum global com boards
+- Threads e respostas em tempo real
+- IDs anônimos por navegador
+- Contador de usuários online via Presence
+- Comentários em artigos em tempo real
+- Busca e sugestões
+- Histórico local
+- Páginas simuladas CCG, 2channel, Google e Yahoo!
 
-## Onde editar conteúdo
+## Único passo obrigatório no Supabase
 
-- `assets/js/data/articles.js`: artigos usados pelo buscador.
-- `assets/js/data/searches.js`: histórico e sugestões de pesquisa.
-- `assets/js/data/forum.js`: boards, threads e posts iniciais.
-- `assets/js/data/sites.js`: diretório de sites.
-- `articles/`: páginas HTML individuais.
-- `sites/`: páginas separadas inspiradas na web do começo dos anos 2000.
+1. Abra seu projeto no Supabase.
+2. Entre em **SQL Editor**.
+3. Abra o arquivo `sql/setup.sql` deste projeto.
+4. Copie tudo, cole no SQL Editor e clique em **Run**.
 
-## Exemplo de artigo
+O script cria as tabelas, índices, RLS, policies, trigger de bump e ativa Realtime.
 
-```js
-{
-  id: "meu-artigo",
-  title: "Título",
-  category: "Categoria",
-  site: "Yahoo! Japan",
-  date: "2001-09-20",
-  keywords: ["palavra", "outra"],
-  summary: "Resumo curto.",
-  body: "Texto completo."
-}
+## Subir para o GitHub
+
+Extraia este ZIP por cima da pasta do seu repositório e rode:
+
+```bat
+git add .
+git commit -m "Supabase realtime forum + CCG archive"
+git push
 ```
 
-O fórum salva threads e respostas no `localStorage` do navegador. Como GitHub Pages é estático, posts não são compartilhados entre visitantes.
+O GitHub Pages atualizará depois do push.
 
-Este é um projeto fictício e não oficial. As páginas simuladas não têm vínculo com os sites e marcas mencionados.
+## Segurança
+
+A chave no frontend é a **publishable key**, própria para uso público com RLS.
+Nunca coloque `service_role`, senha do banco ou connection string no repositório.
+
+O fórum está configurado como anônimo e público. Qualquer visitante pode ler e criar posts, mas não pode editar ou apagar registros através das policies atuais.
+
+
+## Artigos comunitários
+
+A versão atual permite que qualquer visitante publique artigos diretamente pelo site.
+
+Os artigos:
+- ficam salvos no Supabase;
+- aparecem para todos os visitantes;
+- atualizam a lista em tempo real;
+- aceitam título, categoria, fonte, data exibida, resumo, texto completo e tags;
+- recebem um ID anônimo do navegador que publicou.
+
+Depois de atualizar o projeto, execute novamente `sql/setup.sql` no SQL Editor do Supabase para criar a tabela `community_articles` e ativar o Realtime dela.
