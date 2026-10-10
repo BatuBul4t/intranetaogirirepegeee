@@ -159,3 +159,38 @@ function subscribeCommunityArticles(onChange){
         },payload=>onChange(payload.new))
         .subscribe();
 }
+
+
+async function loadTemporaryChatMessages(){
+    const {data,error}=await sb.from("temporary_chat_messages")
+        .select("*")
+        .gt("expires_at",new Date().toISOString())
+        .order("created_at",{ascending:true})
+        .limit(250);
+    if(error) throw error;
+    return data||[];
+}
+
+async function sendTemporaryChatMessage(chatName,content){
+    const expiresAt=new Date(Date.now()+30*60*1000).toISOString();
+    const {data,error}=await sb.from("temporary_chat_messages")
+        .insert({
+            chat_name:chatName,
+            content,
+            expires_at:expiresAt
+        })
+        .select()
+        .single();
+    if(error) throw error;
+    return data;
+}
+
+function subscribeTemporaryChat(onMessage){
+    return sb.channel("temporary-public-chat-"+Math.random().toString(36).slice(2))
+        .on("postgres_changes",{
+            event:"INSERT",
+            schema:"public",
+            table:"temporary_chat_messages"
+        },payload=>onMessage(payload.new))
+        .subscribe();
+}

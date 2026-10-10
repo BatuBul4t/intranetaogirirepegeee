@@ -44,6 +44,7 @@ function route(path){
     if(page==="community") return renderCommunityArticles();
     if(page==="community-article") return renderCommunityArticle(arg);
     if(page==="forum") return renderForum(arg||"");
+    if(page==="chat") return renderTemporaryChat();
     if(page==="thread") return renderThread(arg);
     if(page==="sites") return renderSites();
     if(page==="history") return renderHistory();
@@ -69,6 +70,7 @@ function renderHome(){
         <div class="card"><h3><a href="#publish">Publicar Artigo</a></h3><p>Crie um artigo compartilhado para todos os visitantes.</p></div>
         <div class="card"><h3><a href="#community">Artigos da Comunidade</a></h3><p>Veja publicações enviadas em tempo real.</p></div>
         <div class="card"><h3><a href="#forum/ccg">2channel / CCG</a></h3><p>Fórum compartilhado via Supabase Realtime.</p></div>
+        <div class="card"><h3><a href="#chat">Chat Temporário</a></h3><p>Conversa pública em tempo real. Mensagens expiram em 30 minutos.</p></div>
         <div class="card"><h3><a href="#forum/occult">Ocultismo</a></h3><p>Rumores, relatos noturnos e teorias.</p></div>
         <div class="card"><h3><a href="#search/Projeto%20Senkii">Projeto Senkii</a></h3><p>Pesquisar entradas relacionadas no índice.</p></div>
       </div>
@@ -433,6 +435,204 @@ async function renderCommunityArticle(id){
     }
 }
 
+
+
+function getTemporaryChatName(){
+    return sessionStorage.getItem("aogiri.chat.name")||"";
+}
+
+function setTemporaryChatName(name){
+    sessionStorage.setItem("aogiri.chat.name",name);
+}
+
+function validChatName(name){
+    return /^[^<>]{1,32}$/.test(name.trim());
+}
+
+async function renderTemporaryChat(){
+    addressInput.value="http://chat.aogiri.local/public/";
+    let chatName=getTemporaryChatName();
+
+    view.innerHTML=`
+      <div class="h1">Chat Temporário Público</div>
+      <div class="notice">Este chat é separado do nickname/ID do fórum. Você escolhe um nome só para esta sessão. As mensagens expiram após aproximadamente 30 minutos.</div>
+      <div id="chatNameSetup" class="${chatName?"hidden":""}">
+        <div class="forum-form">
+          <b>Escolha seu nome para o chat</b>
+          <p><input id="chatNameInput" maxlength="32" placeholder="Ex.: Anonymous17" style="width:100%;padding:7px"></p>
+          <button id="chatNameBtn" class="retro-btn">Entrar no chat</button>
+        </div>
+      </div>
+      <div id="chatMain" class="${chatName?"":"hidden"}" style="height:calc(100% - 85px)">
+        <div class="chat-wrap">
+          <div class="chat-top">
+            <span><span class="online-dot"></span><b id="chatOnline">${onlineCount.textContent}</b> online</span>
+            <span>Nome no chat: <b id="currentChatName">${esc(chatName)}</b></span>
+            <button id="changeChatName" class="retro-btn">Trocar nome</button>
+          </div>
+          <div id="chatLog" class="chat-log"><div class="chat-empty">Conectando...</div></div>
+          <div class="chat-compose">
+            <input id="chatMessageInput" maxlength="800" autocomplete="off" placeholder="Digite uma mensagem...">
+            <button id="chatSendBtn" class="retro-btn">Enviar</button>
+          </div>
+        </div>
+      </div>`;
+
+    const setup=document.getElementById("chatNameSetup");
+    const main=document.getElementById("chatMain");
+
+    function enterWithName(){
+        const input=document.getElementById("chatNameInput");
+        const name=(input?.value||"").trim();
+        if(!validChatName(name)){
+            alert("Escolha um nome de 1 a 32 caracteres.");
+            return;
+        }
+        setTemporaryChatName(name);
+        renderTemporaryChat();
+    }
+
+    const nameBtn=document.getElementById("chatNameBtn");
+    if(nameBtn) nameBtn.onclick=enterWithName;
+    const nameInput=document.getElementById("chatNameInput");
+    if(nameInput) nameInput.onkeydown=e=>{if(e.key==="Enter")enterWithName()};
+
+    if(!chatName){
+        setStatus("Aguardando nome do chat");
+        return;
+    }
+
+    document.getElementById("changeChatName").onclick=()=>{
+        sessionStorage.removeItem("aogiri.chat.name");
+        renderTemporaryChat();
+    };
+
+    async function draw(){
+        try{
+            const rows=await loadTemporaryChatMessages();
+            const log=document.getElementById("chatLog");
+            log.innerHTML=rows.length?rows.map(m=>{
+                const exp=Math.max(0,Math.ceil((new Date(m.expires_at)-Date.now())/60000));
+                return `<div class="chat-msg">
+                  <span class="chat-name">${esc(m.chat_name)}</span>
+                  <span class="chat-time">${esc(fmtDate(m.created_at))}</span>
+                  <span class="chat-expire">· expira em ~${exp} min</span>
+                  <div>${esc(m.content)}</div>
+                </div>`;
+            }).join(""):`<div class="chat-empty">Nenhuma mensagem ativa. Seja o primeiro a falar.</div>`;
+            log.scrollTop=log.scrollHeight;
+        }catch(err){
+            document.getElementById("chatLog").innerHTML="<div class='errorbox'>Chat ainda não configurado no Supabase. Execute novamente sql/setup.sql.</div>";
+        }
+    }
+
+    async function send(){
+        const input=document.getElementById("chatMessageInput");
+        const text=input.value.trim();
+        if(!text)return;
+        const button=document.getElementById("chatSendBtn");
+        button.disabled=true;
+        try{
+            await sendTemporaryChatMessage(chatName,text);
+            input.value="";
+            input.focus();
+        }catch(err){
+            alert("Não foi possível enviar. Confira o setup do Supabase.");
+        }finally{
+            button.disabled=false;
+        }
+    }
+
+    document.getElementById("chatSendBtn").onclick=send;
+    document.getElementById("chatMessageInput").onkeydown=e=>{
+        if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}
+    };
+
+    await draw();
+    activeRealtimeChannel=subscribeTemporaryChat(message=>{
+        if(new Date(message.expires_at)>new Date()) draw();
+    });
+    setStatus("Chat temporário conectado")
+}
+
+function adminIsLoggedIn(){
+    return sessionStorage.getItem("aogiri.admin.session")==="1";
+}
+
+function openAdminLogin(){
+    const old=document.getElementById("adminOverlay");
+    if(old)old.remove();
+
+    const overlay=document.createElement("div");
+    overlay.id="adminOverlay";
+    overlay.className="admin-overlay";
+    overlay.innerHTML=`
+      <div class="admin-dialog">
+        <div class="admin-dialog-title">AOGIRI SYSTEM ADMINISTRATION</div>
+        <div class="admin-dialog-body">
+          ${adminIsLoggedIn()?`
+            <div class="admin-panel">
+              <span class="admin-badge">ADMIN</span>
+              <p>Sessão administrativa local ativa.</p>
+              <p class="small">Este painel secreto é um recurso da interface. Para privilégios administrativos reais no Supabase, use autenticação segura no backend.</p>
+              <button id="adminOpenStats" class="retro-btn">Informações do sistema</button>
+              <button id="adminLogout" class="retro-btn">Sair</button>
+              <button id="adminClose" class="retro-btn">Fechar</button>
+            </div>
+          `:`
+            <label>Usuário</label>
+            <input id="adminUser" class="admin-field" autocomplete="off">
+            <label>Senha</label>
+            <input id="adminPass" class="admin-field" type="password">
+            <div id="adminError" class="small danger"></div>
+            <button id="adminLoginBtn" class="retro-btn">Entrar</button>
+            <button id="adminClose" class="retro-btn">Cancelar</button>
+          `}
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    document.getElementById("adminClose").onclick=()=>overlay.remove();
+
+    if(adminIsLoggedIn()){
+        document.getElementById("adminLogout").onclick=()=>{
+            sessionStorage.removeItem("aogiri.admin.session");
+            overlay.remove();
+        };
+        document.getElementById("adminOpenStats").onclick=()=>{
+            const el=overlay.querySelector(".admin-panel");
+            const extra=document.createElement("div");
+            extra.className="small mono";
+            extra.style.marginTop="10px";
+            extra.innerHTML=`NODE: AOG-04<br>SUPABASE: CONNECTED<br>ANON ID: ${esc(ANON_ID)}<br>CHAT NAME: ${esc(getTemporaryChatName()||"(nenhum)")}`;
+            el.appendChild(extra);
+        };
+    }else{
+        const login=()=>{
+            const user=document.getElementById("adminUser").value;
+            const pass=document.getElementById("adminPass").value;
+            if(user==="batu"&&pass==="bulat"){
+                sessionStorage.setItem("aogiri.admin.session","1");
+                overlay.remove();
+                openAdminLogin();
+            }else{
+                document.getElementById("adminError").textContent="ACCESS DENIED";
+            }
+        };
+        document.getElementById("adminLoginBtn").onclick=login;
+        document.getElementById("adminPass").onkeydown=e=>{if(e.key==="Enter")login()};
+        document.getElementById("adminUser").focus();
+    }
+
+    overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.remove()});
+}
+
+document.addEventListener("keydown",e=>{
+    if(e.ctrlKey&&(e.key==="6"||e.code==="Digit6")){
+        e.preventDefault();
+        openAdminLogin();
+    }
+});
 
 function renderSites(){
     addressInput.value="http://directory.aogiri.local/";
